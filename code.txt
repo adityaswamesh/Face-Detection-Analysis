@@ -1,0 +1,524 @@
+## *FACE RECOGINITION USING DIFFERENT MODELS*
+*1. SVM (SUPPORT VECTOR MACHINE) ---- *(FACE DETECTION USING INSIGHTFACE ARCFACE MODEL)**
+
+*2. LBPH (LOCAL BINARY PATTERNS HISTOGRAM) ---- (FACE DETECTION USING HAAR CASCADE MODEL)*
+
+*3. DEEP NEURAL NETWORKS ---- *(FACE DETECTION USING INSIGHTFACE ARCFACE MODEL )**
+
+*4. PCA + LDA + KNN (PRINCIPAL COMPONENT ANALYSIS + LINEAR DISCRIMINENT ANALYSIS + K NEAREST NEIGHBORS )*
+## IMPORTING MODULES AND DEPENDECIES
+import os
+import cv2
+import numpy as np
+import insightface
+from insightface.app import FaceAnalysis
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Dropout
+from tensorflow.keras.utils import to_categorical
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from sklearn.svm import SVC
+from sklearn.decomposition import PCA
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis as LDA
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.metrics import accuracy_score
+import joblib
+import pickle
+import matplotlib.pyplot as plt
+from sklearn.metrics import accuracy_score
+import warnings
+warnings.simplefilter(action='ignore', category=FutureWarning)
+warnings.filterwarnings("ignore")
+*DOWNLOADING FACE DETECTION MODEL FOR SVM AND DNN*
+# Load ArcFace Model FOR face detection
+app = FaceAnalysis(name="buffalo_l")  # one of the highly accurate large model named buffalo_l for face detection
+app.prepare(ctx_id=0, det_size=(640, 640))
+*FUNCTION TO EXTRACT EMBEDDING (USEFUL FEATURES) FROM IMAGE*
+# Extract Face Embeddings
+def extract_face(image_path):
+    img = cv2.imread(image_path)
+    faces = app.get(img)
+    if len(faces) == 0:
+        return None
+    return faces[0].embedding  # 512D embedding
+*GLIMPLSE OF IMAGES USED FOR TRAINING*
+import matplotlib.pyplot as plt
+fig,axs = plt.subplots(17,5,figsize=(100,100))
+axs = axs.flatten()
+
+axis_index = 0
+
+DATASET_PATH = "/home/hrithik/Documents/project_fin/Untitled Folder/Celebrity Faces Dataset"
+
+for person_name in os.listdir(DATASET_PATH):
+    person_folder = os.path.join(DATASET_PATH, person_name)
+    if not os.path.isdir(person_folder):
+        continue
+    images = sorted(os.listdir(person_folder))[:5]  # Use first 50 images for training
+    i=0
+    for i in range(5):
+            img_path = os.path.join(person_folder, images[i])
+            axs[axis_index].imshow(plt.imread(img_path))
+            axs[axis_index].set_title(person_name)
+            axs[axis_index].axis('off')
+
+            axis_index +=1
+
+plt.tight_layout()
+plt.show()
+
+*PREPROCESSING IMAGE DATA FOR SVM MODEL AND DNN MODEL    (EMBEDDING EXTRACTION)*
+# Process Dataset
+DATASET_PATH = "/home/hrithik/Documents/project_fin/Untitled Folder/Celebrity Faces Dataset"
+EMBEDDINGS_PATH = "/home/hrithik/Documents/project_fin/Untitled Folder/SAMPLED_OUT/new_train_embeddings"
+os.makedirs(EMBEDDINGS_PATH, exist_ok=True)
+
+# Prepare Training Data
+X, y = [], []
+for person_name in os.listdir(DATASET_PATH):
+    person_folder = os.path.join(DATASET_PATH, person_name)
+    if not os.path.isdir(person_folder):
+        continue
+    embeddings = []
+    images = sorted(os.listdir(person_folder))[:5]  
+    for img_name in images:
+        img_path = os.path.join(person_folder, img_name)
+        embedding = extract_face(img_path)
+        if embedding is not None:
+            embeddings.append(embedding)
+    if embeddings:
+        X.append(np.mean(embeddings, axis=0))
+        y.append(person_name)
+
+y #LABELS
+*ONE HOT ENCODING AND NORMALIZATION*
+X = np.array(X)
+le = LabelEncoder()
+Y = le.fit_transform(y)
+print(Y)
+Y = to_categorical(Y)  #one hot encoding
+Y
+## *DATA PREPROCESSING OF IMAGE DATA FOR LBPH MODEL AND TRAINING THE LBPH MODEL*
+import cv2
+import os
+import numpy as np
+
+# Paths
+DATASET_PATH = "/home/hrithik/Documents/project_fin/Untitled Folder/Celebrity Faces Dataset"
+MODEL_PATH = "/home/hrithik/Documents/project_fin/Untitled Folder/SAMPLED_OUT"
+os.makedirs(MODEL_PATH, exist_ok=True)
+
+# Initialize face detector and LBPH recognizer
+face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+recognizer = cv2.face.LBPHFaceRecognizer_create()
+
+# Prepare data structures for faces and labels
+faces = []
+labels = []
+label_map = {}
+current_label = 0
+
+# Loop through dataset to process images
+for person_name in os.listdir(DATASET_PATH):
+    person_folder = os.path.join(DATASET_PATH, person_name)
+    if not os.path.isdir(person_folder):
+        continue
+    
+    # Assign unique integer labels for each person
+    if person_name not in label_map:
+        label_map[person_name] = current_label
+        current_label += 1
+
+    # Process the first 50 images for each person
+    images = sorted(os.listdir(person_folder))[:50]
+    
+    for img_name in images:
+        img_path = os.path.join(person_folder, img_name)
+        
+        # Read the image and convert to grayscale
+        img = cv2.imread(img_path)
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        
+        # Detect faces in the image using Haar Cascade
+        faces_detected = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+        
+        # Loop through all detected faces in the image
+        for (x, y, w, h) in faces_detected:
+            # Crop the face from the image
+            face_region = gray[y:y+h, x:x+w]
+            
+            # Append the face and the corresponding label
+            faces.append(face_region)
+            labels.append(label_map[person_name])
+
+# Train the LBPH model
+recognizer.train(faces, np.array(labels))
+
+# Save the trained model
+recognizer.save(os.path.join(MODEL_PATH, "lbph_model.yml"))
+
+print("LBPH model trained and saved successfully.")
+
+y=Y
+## *DEFINING SVM MODEL FOR FACE RECOGINTION AND TRAINING ON DATASET*
+# SVM Model
+svm_model = SVC(kernel='linear', probability=True)
+svm_model.fit(X, np.argmax(y, axis=1))
+## *DATA PREPROCESSING FOR PCA+LDA+KNN AND MODEL TRAINING*
+
+# Paths
+DATASET_PATH = "/home/hrithik/Documents/project_fin/Untitled Folder/Celebrity Faces Dataset"
+MODEL_PATH = "/home/hrithik/Documents/project_fin/Untitled Folder/SAMPLED_OUT"
+os.makedirs(MODEL_PATH, exist_ok=True)
+
+# Initialize face detector
+face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+
+# Prepare data structures for faces and labels
+faces = []
+labels = []
+label_map = {}
+current_label = 0
+
+# Loop through dataset to process images
+for person_name in os.listdir(DATASET_PATH):
+    person_folder = os.path.join(DATASET_PATH, person_name)
+    if not os.path.isdir(person_folder):
+        continue
+    
+    # Assign unique integer labels for each person
+    if person_name not in label_map:
+        label_map[person_name] = current_label
+        current_label += 1
+
+    # Process the first 50 images for each person
+    images = sorted(os.listdir(person_folder))[:50]
+    
+    for img_name in images:
+        img_path = os.path.join(person_folder, img_name)
+        
+        # Read the image and convert to grayscale
+        img = cv2.imread(img_path)
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        
+        # Detect faces in the image using Haar Cascade
+        faces_detected = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+        
+        # Loop through all detected faces in the image
+        for (x, y, w, h) in faces_detected:
+            # Crop the face from the image
+            face_region = gray[y:y+h, x:x+w]
+            
+            # Resize the face to a fixed size (e.g., 100x100)
+            face_resized = cv2.resize(face_region, (100, 100))  # Resize to 100x100 pixels
+            
+            # Flatten the face to a 1D array
+            face_flattened = face_resized.flatten()
+            
+            # Append the face and the corresponding label
+            faces.append(face_flattened)
+            labels.append(label_map[person_name])
+
+# Convert faces and labels into numpy arrays
+faces = np.array(faces)
+labels = np.array(labels)
+
+# Apply PCA (Reduce dimensionality)
+pca = PCA(n_components=min(50, faces.shape[1]))  # Adjust n_components as needed
+faces_pca = pca.fit_transform(faces)
+
+# Apply LDA (Linear Discriminant Analysis) for better class separation
+lda = LDA(n_components=len(np.unique(labels)) - 1)  # LDA components are typically classes - 1
+faces_lda = lda.fit_transform(faces_pca, labels)
+
+# Train KNN classifier
+knn = KNeighborsClassifier(n_neighbors=5)
+knn.fit(faces_lda, labels)
+
+# Save the trained models (PCA, LDA, and KNN)
+with open(os.path.join(MODEL_PATH, "pca_model.pkl"), 'wb') as f:
+    pickle.dump(pca, f)
+
+with open(os.path.join(MODEL_PATH, "lda_model.pkl"), 'wb') as f:
+    pickle.dump(lda, f)
+
+with open(os.path.join(MODEL_PATH, "knn_model.pkl"), 'wb') as f:
+    pickle.dump(knn, f)
+
+print("PCA + LDA + KNN model trained and saved successfully.")
+
+## *TESTING THE PCA+LDA+KNN MODEL AND FINDING ACCURACY*
+# Load the saved PCA, LDA, and KNN models
+with open(os.path.join(MODEL_PATH, "pca_model.pkl"), 'rb') as f:
+    pca = pickle.load(f)
+
+with open(os.path.join(MODEL_PATH, "lda_model.pkl"), 'rb') as f:
+    lda = pickle.load(f)
+
+with open(os.path.join(MODEL_PATH, "knn_model.pkl"), 'rb') as f:
+    knn = pickle.load(f)
+
+# Initialize face detector
+face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+
+# Function to preprocess the images: resize, flatten, apply PCA and LDA
+def preprocess_image(img_path, pca, lda, resize_dim=(100, 100)):
+    # Read the image and convert to grayscale
+    img = cv2.imread(img_path)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    
+    # Detect faces in the image using Haar Cascade
+    faces_detected = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+    
+    if len(faces_detected) == 0:
+        return None  # No face detected
+    
+    # Assume the first detected face is the one we want to use
+    (x, y, w, h) = faces_detected[0]
+    face_region = gray[y:y+h, x:x+w]
+    
+    # Resize the face to the fixed size
+    face_resized = cv2.resize(face_region, resize_dim)
+    
+    # Flatten the face to 1D
+    face_flattened = face_resized.flatten().reshape(1, -1)
+    
+    # Apply PCA and LDA transformations
+    face_pca = pca.transform(face_flattened)
+    face_lda = lda.transform(face_pca)
+    
+    return face_lda
+
+# Test the model on 10 new images for each person
+true_labels = []
+predicted_labels = []
+
+# Loop through the dataset
+for person_name in os.listdir(DATASET_PATH):
+    person_folder = os.path.join(DATASET_PATH, person_name)
+    if not os.path.isdir(person_folder):
+        continue
+    
+    # Process the first 10 test images for each person
+    images = sorted(os.listdir(person_folder))[50:60]  # Take images 51-60 as test images
+    
+    for img_name in images:
+        img_path = os.path.join(person_folder, img_name)
+        
+        # Preprocess the test image (resize, flatten, apply PCA and LDA)
+        face_lda = preprocess_image(img_path, pca, lda)
+        
+        if face_lda is not None:
+            # Predict the label using the trained KNN model
+            predicted_label = knn.predict(face_lda)
+            true_labels.append(label_map[person_name])  # True label
+            predicted_labels.append(predicted_label[0])  # Predicted label
+
+
+
+# Calculate accuracy
+knn_acc = accuracy_score(true_labels, predicted_labels)
+print(f"Model accuracy on test set: {knn_acc * 100:.2f}%")
+len(predicted_labels)
+## *DEFINING DNN MODEL*
+# Neural Network Model
+y=Y
+model = Sequential([
+    Dense(256, activation='relu', input_shape=(512,)),
+    Dropout(0.5),
+    Dense(128, activation='relu'),
+    Dropout(0.5),
+    Dense(y.shape[1], activation='softmax')
+])
+model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+model.summary()
+*TRAINING DNN MODEL ON TRAIN SET*
+model.fit(X, y, epochs=50, batch_size=8, validation_data=(X, y))
+*FINDING EMBEDDINGS OF TEST IMAGES THAT IS TO BE USED FOR PREDICTION USING SVM AND DNN*
+*ALSO STORING GRAY IMAGES FOR LBPH*
+test_images = []
+
+for person_name in os.listdir(DATASET_PATH):
+    person_folder = os.path.join(DATASET_PATH, person_name)
+    if not os.path.isdir(person_folder):
+        continue
+    test_imgs = sorted(os.listdir(person_folder))[50:60]  # Use remaining 50 images for testing
+    for img_name in test_imgs:
+        img_path = os.path.join(person_folder, img_name)
+        
+        #SVM AND DNN
+        embedding = extract_face(img_path)
+        
+
+        img = cv2.imread(img_path)
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        #LBPH
+        if len(faces_detected) > 0:
+            # Get the first detected face (x, y, w, h)
+            x, y, w, h = faces_detected[0]
+            
+            # Crop the first face from the image
+            face_region = gray[y:y+h, x:x+w]
+        
+        if embedding is not None:
+            test_images.append((embedding, le.transform([person_name])[0],img_path,face_region))
+*TOTAL TEST IMAGES*
+len(test_images)
+*PREDICTION OF LABELS USING ALL MODELS*
+# Evaluate Models
+from matplotlib import pyplot as plt
+# Create reverse mapping (integer label to person name)
+reverse_label_map = {v: k for k, v in label_map.items()}
+
+y_true = []
+y_pred_svm, y_pred_nn, y_pred_lbph= [], [], []
+correct_predictions = 0
+total_predictions = 0
+
+for embedding, true_label, img_path,gray in test_images:
+    y_true.append(true_label)
+
+    # SVM Prediction
+    pred_svm = svm_model.predict([embedding])[0]
+    y_pred_svm.append(pred_svm)
+    
+    # Neural Network Prediction
+    pred_nn = np.argmax(model.predict(np.array([embedding])), axis=1)[0]
+    y_pred_nn.append(pred_nn)
+
+    # LBPH prediction
+    label = label_map[le.inverse_transform([true_label])[0]]
+    lbph_label, lbph_confidence = recognizer.predict(gray)
+    y_pred_lbph.append(lbph_label)
+    if lbph_label == label:
+        correct_predictions += 1
+    total_predictions += 1
+
+    img = cv2.imread(img_path)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    plt.figure(figsize=(4, 4))
+    plt.imshow(img)
+    plt.axis('off')
+    plt.title(f"True: {le.inverse_transform([true_label])[0]}\nSVM: {le.inverse_transform([pred_svm])[0]}\nNN: {le.inverse_transform([pred_nn])[0]}")#
+    plt.show()
+  
+
+import cv2
+import numpy as np
+from matplotlib import pyplot as plt
+
+# Create reverse mapping (integer label to person name)
+reverse_label_map = {v: k for k, v in label_map.items()}
+
+# Initialize lists to store predictions and true labels
+y_true = []
+y_pred_svm, y_pred_nn, y_pred_lbph = [], [], []
+correct_predictions = 0
+total_predictions = 0
+length = len(predicted_labels)
+# Create a grid of subplots (33 rows x 5 columns, or adjust as necessary)
+fig, axs = plt.subplots(33, 5, figsize=(20, 40))  # Adjust the size of the grid
+axs = axs.flatten()  # Flatten the grid to iterate easily
+
+# Loop through test images to make predictions and display the results
+for idx, (embedding, true_label, img_path, gray) in enumerate(test_images):
+    y_true.append(true_label)
+
+    # SVM Prediction
+    pred_svm = svm_model.predict([embedding])[0]
+    y_pred_svm.append(pred_svm)
+    
+    # Neural Network Prediction
+    pred_nn = np.argmax(model.predict(np.array([embedding])), axis=1)[0]
+    y_pred_nn.append(pred_nn)
+
+    # LBPH Prediction
+    label = label_map[le.inverse_transform([true_label])[0]]
+    lbph_label, lbph_confidence = recognizer.predict(gray)
+    y_pred_lbph.append(lbph_label)
+    if lbph_label == label:
+        correct_predictions += 1
+    total_predictions += 1
+
+    # Read and convert image
+    img = cv2.imread(img_path)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+    # Get the current axis to plot the image
+    ax = axs[idx]
+
+    # Display the image on the subplot
+    ax.imshow(img)
+    ax.axis('off')  # Hide the axis
+
+    # Set the model predictions as text on the side of the image
+    ax.text(1.05, 0.8, f"True: {le.inverse_transform([true_label])[0]}\n"
+                        f"SVM: {le.inverse_transform([pred_svm])[0]}\n"
+                        f"NN: {le.inverse_transform([pred_nn])[0]}\n"
+                        f"LBPH: {reverse_label_map.get(lbph_label, 'Unknown')}\n"
+                        f"KNN (PCA+LDA): {reverse_label_map.get(predicted_labels[idx] if idx < length else 17,'Unkown')}",
+            transform=ax.transAxes, fontsize=9, verticalalignment='top', horizontalalignment='left',
+            bbox=dict(facecolor='white', alpha=0.7, boxstyle="round,pad=0.5"))
+
+    # Check if the index exceeds the number of subplots (in case test_images has fewer images)
+    if idx >= len(axs):
+        break  # Exit if we've plotted all images
+
+# Adjust layout to prevent overlap and display the grid
+plt.tight_layout()
+plt.show()
+
+# Print the accuracy (optional)
+accuracy = correct_predictions / total_predictions if total_predictions > 0 else 0
+print(f"Accuracy: {accuracy:.2f}")
+
+# Calculate accuracy lbph
+lbph_acc = (correct_predictions / total_predictions)  if total_predictions > 0 else 0
+print(f"Accuracy: {lbph_acc:.2f}")
+print(y_true)
+len(y_true)
+*EVALUATING THE MODELS BASED ON ACCURACY_SCORE*
+# Compute Accuracy
+svm_acc = accuracy_score(y_true, y_pred_svm)
+nn_acc = accuracy_score(y_true, y_pred_nn)
+
+
+
+print(f"SVM Accuracy: {svm_acc:.2f}")
+print(f"LBPH Accuracy: {lbph_acc:.2f}")
+print(f"KNN Accuracy (PCA+LDA): {knn_acc:.2f}")
+print(f"Neural Network Accuracy: {nn_acc:.2f}")
+import matplotlib.pyplot as plt
+from sklearn.metrics import accuracy_score
+
+
+
+# Create a list of models and their corresponding accuracies
+models = ['SVM', 'Neural Network', 'LBPH', 'KNN(PCA+LDA)']
+accuracies = [svm_acc, nn_acc, lbph_acc, knn_acc]
+
+# Create a bar chart
+plt.figure(figsize=(6, 4))
+
+# Plot the bar chart
+plt.bar(models, accuracies)
+
+# Adding labels and title with a custom padding
+plt.xlabel('Models')
+plt.ylabel('Accuracy')
+plt.title('Model Accuracy Comparison', pad=20)  # Increase pad for more space between title and plot
+
+# Display the accuracy values on top of the bars
+for i, acc in enumerate(accuracies):
+    plt.text(i, acc + 0.02, f'{acc:.2f}', ha='center', fontsize=12)
+
+# Show the plot
+plt.ylim(0, 1)  # Set the y-axis limit to [0, 1] for accuracy scale
+plt.show()
+
+# Print accuracies
+print(f"SVM Accuracy: {svm_acc:.2f}")
+print(f"Neural Network Accuracy: {nn_acc:.2f}")
+print(f"LBPH Accuracy: {lbph_acc:.2f}")
+print(f"KNN(PCA+LDA) Accuracy: {knn_acc:.2f}")s
